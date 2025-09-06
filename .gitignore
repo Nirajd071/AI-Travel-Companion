@@ -105,6 +105,8 @@ coverage/
 .firebase/
 firebase-debug.log
 .firebaserc
+*firebase-adminsdk*.json
+travel-companion-cce49-firebase-adminsdk-fbsvc-0e0eb56302.json
 
 # Android
 *.jks
