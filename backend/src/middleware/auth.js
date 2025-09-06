@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { promisify } = require('util');
-const User = require('../models/User');
+const { User } = require('../models');
 const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
 
@@ -65,11 +65,6 @@ const protect = catchAsync(async (req, res, next) => {
         401
       )
     );
-  }
-
-  // 4) Check if user is active
-  if (!currentUser.isActive) {
-    return next(new AppError('Your account has been deactivated.', 401));
   }
 
   // Grant access to protected route

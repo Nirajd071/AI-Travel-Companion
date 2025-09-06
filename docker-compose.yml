@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database with PostGIS Extension
   postgres:
-    image: postgres:15
+    image: postgis/postgis:15-3.3
     container_name: ai-travel-postgres
     environment:
       POSTGRES_DB: ai_travel_db
@@ -13,7 +13,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./backend/sql/postgis-init.sql:/docker-entrypoint-initdb.d/02-postgis.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travel_user -d ai_travel_db"]
       interval: 10s
@@ -61,6 +62,25 @@ services:
       - /app/node_modules
     command: npm run dev
 
+  # MongoDB for Analytics & ML Logs
+  mongodb:
+    image: mongo:7
+    container_name: ai-travel-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin_pass
+      MONGO_INITDB_DATABASE: ai_travel_analytics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./backend/sql/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # AI Services
   ai-services:
     build:
@@ -72,10 +92,13 @@ services:
     environment:
       DATABASE_URL: postgresql://travel_user:travel_pass@postgres/ai_travel_db
       REDIS_URL: redis://redis:6379
+      MONGODB_URL: mongodb://admin:admin_pass@mongodb:27017/ai_travel_analytics?authSource=admin
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     volumes:
       - ./ai-services:/app
@@ -99,4 +122,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  mongodb_data:
   ai_models:

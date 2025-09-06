@@ -298,29 +298,17 @@ EOF
     deactivate
     cd ..
     
-    # Frontend dependencies (Flutter)
-    cd frontend
-    if [ ! -f pubspec.yaml ]; then
-        flutter create . --org com.aitravel.app
-        # Add additional dependencies to pubspec.yaml
-        cat >> pubspec.yaml << EOF
-
-  # Additional dependencies
-  http: ^1.1.0
-  provider: ^6.1.1
-  flutter_bloc: ^8.1.3
-  sqflite: ^2.3.0
-  shared_preferences: ^2.2.2
-  flutter_local_notifications: ^16.3.0
-  google_maps_flutter: ^2.5.0
-  firebase_core: ^2.24.2
-  firebase_messaging: ^14.7.9
-  cached_network_image: ^3.3.0
-  image_picker: ^1.0.4
-  geolocator: ^10.1.0
-  permission_handler: ^11.1.0
-EOF
-        flutter pub get
+    # Frontend dependencies (Next.js)
+    cd travel-companion
+    if [ ! -f package.json ]; then
+        npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
+        # Install additional dependencies
+        npm install @types/node @types/react @types/react-dom
+        npm install lucide-react class-variance-authority clsx tailwind-merge
+        npm install @radix-ui/react-slot @radix-ui/react-dropdown-menu
+        npm install next-themes framer-motion
+    else
+        npm install
     fi
     cd ..
 }
@@ -356,14 +344,11 @@ MODEL_PATH=./models
 LOG_LEVEL=INFO
 EOF
     
-    # Frontend environment (for API endpoints)
-    mkdir -p frontend/lib/config
-    cat > frontend/lib/config/environment.dart << EOF
-class Environment {
-  static const String apiBaseUrl = 'http://localhost:3000/api';
-  static const String aiServiceUrl = 'http://localhost:8000';
-  static const String googleMapsApiKey = 'your_google_maps_api_key_here';
-}
+    # Frontend environment (Next.js)
+    cat > travel-companion/.env.local << EOF
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
+NEXT_PUBLIC_AI_SERVICE_URL=http://localhost:8000
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 EOF
 }
 
@@ -387,8 +372,8 @@ EOF
     
     cat > scripts/start-frontend.sh << EOF
 #!/bin/bash
-cd frontend
-flutter run
+cd travel-companion
+npm run dev
 EOF
     
     chmod +x scripts/*.sh
@@ -397,7 +382,7 @@ EOF
     print_status "Next steps:"
     echo "1. Restart your terminal or run: source ~/.bashrc"
     echo "2. Add your API keys to the .env files"
-    echo "3. Run 'flutter doctor' to verify Flutter installation"
+    echo "3. Run 'node --version && npm --version' to verify Node.js installation"
     echo "4. Use the scripts in ./scripts/ to start services"
     echo "5. Check README.md for detailed usage instructions"
 }
@@ -407,9 +392,9 @@ main() {
     detect_os
     install_system_deps
     install_nodejs
+    install_node_tools
     install_python
-    install_flutter
-    install_android_sdk
+    setup_dev_tools
     setup_databases
     install_docker
     create_project_structure

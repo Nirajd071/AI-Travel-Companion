@@ -6,19 +6,23 @@ class FoursquareService {
   constructor() {
     this.apiKey = process.env.FOURSQUARE_API_KEY;
     this.baseUrl = 'https://api.foursquare.com/v3/places';
+    this.apiVersion = '20220301'; // Added this line
   }
 
-  async findNearbyPlaces(latitude, longitude, radius = 5000, categories = null) {
+  async findNearbyVenues(latitude, longitude, radius = 5000, categoryId = null) {
     try {
       const params = {
+        client_id: this.apiKey,
+        client_secret: 'dummy', // v2 API format
+        v: this.apiVersion,
         ll: `${latitude},${longitude}`,
         radius,
         limit: 50
       };
 
-      if (categories) params.categories = categories;
+      if (categoryId) params.categoryId = categoryId;
 
-      const response = await axios.get(`${this.baseUrl}/nearby`, {
+      const response = await axios.get(`${this.baseUrl}/venues/search`, {
         params,
         headers: {
           'Authorization': this.apiKey,

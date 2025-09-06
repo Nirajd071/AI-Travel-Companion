@@ -1,5 +1,8 @@
 const rateLimit = require('express-rate-limit');
 
+// Memory store for rate limiting (fallback when Redis is unavailable)
+const memoryStore = new Map();
+
 // General API rate limiter (using memory store for now)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

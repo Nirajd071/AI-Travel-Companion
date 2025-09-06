@@ -5,26 +5,42 @@ const { logger } = require('../config/database');
 class GooglePlacesService {
   constructor() {
     this.apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    this.baseUrl = 'https://maps.googleapis.com/maps/api/place';
+    this.baseUrl = 'https://places.googleapis.com/v1';
+    this.legacyBaseUrl = 'https://maps.googleapis.com/maps/api/place';
   }
 
   async findNearbyPlaces(latitude, longitude, radius = 5000, type = null) {
     try {
-      const params = {
-        location: `${latitude},${longitude}`,
-        radius,
-        key: this.apiKey
+      const requestBody = {
+        locationBias: {
+          circle: {
+            center: {
+              latitude: latitude,
+              longitude: longitude
+            },
+            radius: radius
+          }
+        },
+        maxResultCount: 20
       };
 
-      if (type) params.type = type;
-
-      const response = await axios.get(`${this.baseUrl}/nearbysearch/json`, { params });
-      
-      if (response.data.status !== 'OK') {
-        throw new Error(`Google Places API error: ${response.data.status}`);
+      if (type) {
+        requestBody.includedTypes = [type];
       }
 
-      return response.data.results;
+      const response = await axios.post(`${this.baseUrl}/places:searchNearby`, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': this.apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.id'
+        }
+      });
+      
+      if (response.data.error) {
+        throw new Error(`Google Places API error: ${response.data.error.message}`);
+      }
+
+      return response.data.places || [];
     } catch (error) {
       logger.error('Google Places API error:', error);
       throw error;
@@ -54,20 +70,33 @@ class GooglePlacesService {
 
   async searchPlaces(query, latitude, longitude, radius = 10000) {
     try {
-      const params = {
-        query,
-        location: `${latitude},${longitude}`,
-        radius,
-        key: this.apiKey
+      const requestBody = {
+        textQuery: query,
+        locationBias: {
+          circle: {
+            center: {
+              latitude: latitude,
+              longitude: longitude
+            },
+            radius: radius
+          }
+        },
+        maxResultCount: 20
       };
 
-      const response = await axios.get(`${this.baseUrl}/textsearch/json`, { params });
+      const response = await axios.post(`${this.baseUrl}/places:searchText`, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': this.apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.id'
+        }
+      });
       
-      if (response.data.status !== 'OK') {
-        throw new Error(`Google Places API error: ${response.data.status}`);
+      if (response.data.error) {
+        throw new Error(`Google Places API error: ${response.data.error.message}`);
       }
 
-      return response.data.results;
+      return response.data.places || [];
     } catch (error) {
       logger.error('Google Places search API error:', error);
       throw error;
@@ -112,31 +141,29 @@ class GooglePlacesService {
   }
 
   async createPOIFromGooglePlace(place) {
-    const category = this.mapGoogleTypeToCategory(place.types);
-    const location = place.geometry.location;
+    const category = this.mapGoogleTypeToCategory(place.types || []);
+    const location = place.location;
 
     const poiData = {
-      name: place.name,
-      description: place.vicinity || null,
+      name: place.displayName?.text || place.name,
+      description: place.formattedAddress || null,
       category,
-      subcategory: place.types[0],
-      latitude: location.lat,
-      longitude: location.lng,
+      subcategory: place.types?.[0] || 'other',
+      latitude: location.latitude,
+      longitude: location.longitude,
       location: {
         type: 'Point',
-        coordinates: [location.lng, location.lat]
+        coordinates: [location.longitude, location.latitude]
       },
-      address: place.vicinity,
+      address: place.formattedAddress,
       rating: place.rating || null,
-      reviewCount: place.user_ratings_total || 0,
-      priceLevel: place.price_level || null,
-      externalId: place.place_id,
+      reviewCount: place.userRatingCount || 0,
+      priceLevel: place.priceLevel || null,
+      externalId: place.id,
       externalSource: 'google_places',
       popularityScore: this.calculatePopularityScore(place),
       tags: place.types || [],
-      images: place.photos ? place.photos.map(photo => 
-        `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photo.photo_reference}&key=${this.apiKey}`
-      ) : []
+      images: [] // Photos require separate API call in new format
     };
 
     return await POI.create(poiData);
@@ -204,14 +231,16 @@ class GooglePlacesService {
     }
 
     // Review count contribution (0-0.3)
-    if (place.user_ratings_total) {
-      const reviewScore = Math.min(place.user_ratings_total / 1000, 1) * 0.3;
+    const reviewCount = place.userRatingCount || place.user_ratings_total || 0;
+    if (reviewCount) {
+      const reviewScore = Math.min(reviewCount / 1000, 1) * 0.3;
       score += reviewScore;
     }
 
     // Price level contribution (budget places get slight boost)
-    if (place.price_level) {
-      if (place.price_level <= 2) score += 0.1;
+    const priceLevel = place.priceLevel || place.price_level;
+    if (priceLevel) {
+      if (priceLevel <= 2) score += 0.1;
     }
 
     return Math.min(1, Math.max(0, score));
