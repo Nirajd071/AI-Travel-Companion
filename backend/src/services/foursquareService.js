@@ -4,16 +4,17 @@ const { logger } = require('../config/database');
 
 class FoursquareService {
   constructor() {
-    this.apiKey = process.env.FOURSQUARE_API_KEY;
-    this.baseUrl = 'https://api.foursquare.com/v3/places';
-    this.apiVersion = '20220301'; // Added this line
+    this.clientId = process.env.FOURSQUARE_CLIENT_ID;
+    this.clientSecret = process.env.FOURSQUARE_CLIENT_SECRET;
+    this.baseUrl = 'https://api.foursquare.com/v2';
+    this.apiVersion = '20231101';
   }
 
   async findNearbyVenues(latitude, longitude, radius = 5000, categoryId = null) {
     try {
       const params = {
-        client_id: this.apiKey,
-        client_secret: 'dummy', // v2 API format
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
         v: this.apiVersion,
         ll: `${latitude},${longitude}`,
         radius,
@@ -23,33 +24,27 @@ class FoursquareService {
       if (categoryId) params.categoryId = categoryId;
 
       const response = await axios.get(`${this.baseUrl}/venues/search`, {
-        params,
-        headers: {
-          'Authorization': this.apiKey,
-          'Accept': 'application/json'
-        }
+        params
       });
 
-      return response.data.results;
+      return response.data.response.venues;
     } catch (error) {
       logger.error('Foursquare API error:', error);
       throw error;
     }
   }
 
-  async getPlaceDetails(fsqId) {
+  async getPlaceDetails(venueId) {
     try {
-      const response = await axios.get(`${this.baseUrl}/${fsqId}`, {
+      const response = await axios.get(`${this.baseUrl}/venues/${venueId}`, {
         params: {
-          fields: 'name,location,categories,rating,stats,price,hours,website,tel,photos,description,tips'
-        },
-        headers: {
-          'Authorization': this.apiKey,
-          'Accept': 'application/json'
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          v: this.apiVersion
         }
       });
 
-      return response.data;
+      return response.data.response.venue;
     } catch (error) {
       logger.error('Foursquare details API error:', error);
       throw error;
@@ -62,18 +57,17 @@ class FoursquareService {
         query,
         ll: `${latitude},${longitude}`,
         radius,
-        limit: 50
+        limit: 50,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        v: this.apiVersion
       };
 
-      const response = await axios.get(`${this.baseUrl}/search`, {
-        params,
-        headers: {
-          'Authorization': this.apiKey,
-          'Accept': 'application/json'
-        }
+      const response = await axios.get(`${this.baseUrl}/venues/search`, {
+        params
       });
 
-      return response.data.results;
+      return response.data.response.venues;
     } catch (error) {
       logger.error('Foursquare search API error:', error);
       throw error;
@@ -90,7 +84,7 @@ class FoursquareService {
           // Check if POI already exists
           const existingPOI = await POI.findOne({
             where: {
-              externalId: place.fsq_id,
+              externalId: place.id,
               externalSource: 'foursquare'
             }
           });
@@ -105,7 +99,7 @@ class FoursquareService {
             syncedPOIs.push(newPOI);
           }
         } catch (error) {
-          logger.error(`Error syncing POI ${place.fsq_id}:`, error);
+          logger.error(`Error syncing POI ${place.id}:`, error);
         }
       }
 
@@ -119,9 +113,9 @@ class FoursquareService {
 
   async createPOIFromFoursquarePlace(place) {
     const category = this.mapFoursquareCategoryToCategory(place.categories);
-    const location = place.geocodes?.main || place.geocodes?.roof;
+    const location = place.location;
 
-    if (!location) {
+    if (!location || !location.lat || !location.lng) {
       throw new Error('No location data available for place');
     }
 
@@ -130,26 +124,26 @@ class FoursquareService {
       description: place.description || null,
       category,
       subcategory: place.categories[0]?.name,
-      latitude: location.latitude,
-      longitude: location.longitude,
+      latitude: location.lat,
+      longitude: location.lng,
       location: {
         type: 'Point',
-        coordinates: [location.longitude, location.latitude]
+        coordinates: [location.lng, location.lat]
       },
       address: this.formatAddress(place.location),
-      city: place.location?.locality,
+      city: place.location?.city,
       country: place.location?.country,
-      postalCode: place.location?.postcode,
+      postalCode: place.location?.postalCode,
       rating: place.rating ? place.rating / 2 : null, // Convert 0-10 to 0-5
-      reviewCount: place.stats?.total_photos || 0,
-      priceLevel: place.price || null,
-      phone: place.tel,
-      website: place.website,
-      externalId: place.fsq_id,
+      reviewCount: place.stats?.checkinsCount || 0,
+      priceLevel: place.price?.tier || null,
+      phone: place.contact?.phone,
+      website: place.url,
+      externalId: place.id,
       externalSource: 'foursquare',
       popularityScore: this.calculatePopularityScore(place),
       tags: place.categories?.map(cat => cat.name) || [],
-      images: place.photos ? place.photos.slice(0, 5).map(photo => 
+      images: place.photos ? place.photos.groups[0]?.items.slice(0, 5).map(photo => 
         `${photo.prefix}400x400${photo.suffix}`
       ) : []
     };
